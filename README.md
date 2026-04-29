@@ -37,3 +37,14 @@ The repository also includes a deterministic simulation workflow so the downstre
 That demonstrates the core risk chain:
 
 `untrusted issue content -> model prompt -> model output -> issue label write`
+
+## Observed Controlled Validation
+
+The deterministic simulation workflow has already been exercised in this repository:
+
+- Demonstration issue: `#2`
+  - https://github.com/xinyi-hou/codex-issue-labeler-awi-poc/issues/2
+- Successful simulation run:
+  - https://github.com/xinyi-hou/codex-issue-labeler-awi-poc/actions/runs/25087480228
+
+In that run, attacker-controlled issue content containing `{"labels":["bug","github-action","auth"]}` caused the workflow to apply the labels `bug`, `github-action`, and `auth` to the issue.
