@@ -42,6 +42,7 @@ jobs:
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       MODEL_OUTPUT: ${{ needs.simulate-model.outputs.model_output }}
     steps:
