@@ -18,18 +18,21 @@ This PoC is intended for controlled security validation only.
 
 ## Files
 
-- `.github/workflows/issue-labeler.yml`: minimal vulnerable workflow
+- `.github/workflows/issue-labeler.yml`: minimal vulnerable workflow using `openai/codex-action`
+- `.github/workflows/simulated-obedient-labeler.yml`: deterministic simulation of the same prompt-to-label-write chain without an external model dependency
 - `poc/payload.md`: sample attacker-controlled issue content
 
 ## Setup
 
-1. Add the repository Actions secret `CODEX_OPENAI_API_KEY`.
-2. Ensure the repository has labels such as `bug`, `github-action`, `auth`, and `codex-label`.
-3. Open a new issue using the sample text from `poc/payload.md`.
+1. Ensure the repository has labels such as `bug`, `github-action`, `auth`, and `codex-label`.
+2. Open a new issue using the sample text from `poc/payload.md`.
+3. For the real `openai/codex-action` path, add the repository Actions secret `CODEX_OPENAI_API_KEY`.
 
 ## Expected Behavior In The PoC
 
 If the model follows the injected instruction instead of the intended labeling rules, the `apply-labels` job may add attacker-chosen labels to the issue.
+
+The repository also includes a deterministic simulation workflow so the downstream label-write behavior can be validated in a controlled way even without an external model API key.
 
 That demonstrates the core risk chain:
 

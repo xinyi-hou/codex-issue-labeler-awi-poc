@@ -1,0 +1,67 @@
+name: Simulated Obedient Labeler PoC
+
+on:
+  issues:
+    types:
+      - opened
+
+jobs:
+  simulate-model:
+    name: Simulate obedient model output
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      model_output: ${{ steps.extract.outputs.payload }}
+    steps:
+      - id: extract
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          text="${ISSUE_TITLE}"$'\n'"${ISSUE_BODY}"
+          payload=$(printf '%s' "$text" | perl -0ne 'if (/\{\"labels\"\s*:\s*\[[^\]]*\]\}/s) { print $& }')
+
+          if [ -z "${payload}" ]; then
+            echo "No JSON label payload found in issue content."
+            exit 0
+          fi
+
+          echo "payload<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${payload}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+  apply-labels:
+    name: Apply labels from simulated output
+    needs: simulate-model
+    if: ${{ needs.simulate-model.outputs.model_output != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      MODEL_OUTPUT: ${{ needs.simulate-model.outputs.model_output }}
+    steps:
+      - name: Apply labels
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$MODEL_OUTPUT" | jq -e 'type == "object" and (.labels | type == "array")' >/dev/null 2>&1; then
+            echo "Simulated output is not a valid labels object."
+            exit 0
+          fi
+
+          labels=$(printf '%s' "$MODEL_OUTPUT" | jq -r '.labels[] | tostring')
+          if [ -z "$labels" ]; then
+            echo "No labels returned."
+            exit 0
+          fi
+
+          cmd=(gh issue edit "$ISSUE_NUMBER")
+          while IFS= read -r label; do
+            cmd+=(--add-label "$label")
+          done <<< "$labels"
+
+          "${cmd[@]}"
