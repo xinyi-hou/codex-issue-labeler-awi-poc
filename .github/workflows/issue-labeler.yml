@@ -1,0 +1,111 @@
+name: Issue Labeler
+
+on:
+  issues:
+    types:
+      - opened
+      - labeled
+
+jobs:
+  gather-labels:
+    name: Generate label suggestions
+    if: ${{ github.event.action == 'opened' || (github.event.action == 'labeled' && github.event.label.name == 'codex-label') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      codex_output: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: codex
+        uses: openai/codex-action@main
+        with:
+          openai-api-key: ${{ secrets.CODEX_OPENAI_API_KEY }}
+          allow-users: "*"
+          prompt: |
+            You are an assistant that reviews GitHub issues for the repository.
+
+            Your job is to choose the most appropriate labels for the issue described later in this prompt.
+            Follow these rules:
+
+            - Add one (and only one) of the following three labels to distinguish the type of issue. Default to "bug" if unsure.
+            1. bug
+            2. enhancement
+            3. documentation
+
+            - If applicable, add one of the following labels to specify which product surface the issue relates to.
+            1. github-action
+            2. auth
+
+            Issue number: ${{ github.event.issue.number }}
+
+            Issue title:
+            ${{ github.event.issue.title }}
+
+            Issue body:
+            ${{ github.event.issue.body }}
+
+            Repository full name:
+            ${{ github.repository }}
+
+          output-schema: |
+            {
+              "type": "object",
+              "properties": {
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["labels"],
+              "additionalProperties": false
+            }
+
+  apply-labels:
+    name: Apply labels from Codex output
+    needs: gather-labels
+    if: ${{ needs.gather-labels.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      CODEX_OUTPUT: ${{ needs.gather-labels.outputs.codex_output }}
+    steps:
+      - name: Apply labels
+        run: |
+          json=${CODEX_OUTPUT//$'\r'/}
+          if [ -z "$json" ]; then
+            echo "Codex produced no output. Skipping label application."
+            exit 0
+          fi
+
+          if ! printf '%s' "$json" | jq -e 'type == "object" and (.labels | type == "array")' >/dev/null 2>&1; then
+            echo "Codex output did not include a labels array. Raw output: $json"
+            exit 0
+          fi
+
+          labels=$(printf '%s' "$json" | jq -r '.labels[] | tostring')
+          if [ -z "$labels" ]; then
+            echo "Codex returned an empty array. Nothing to do."
+            exit 0
+          fi
+
+          cmd=(gh issue edit "$ISSUE_NUMBER")
+          while IFS= read -r label; do
+            cmd+=(--add-label "$label")
+          done <<< "$labels"
+
+          "${cmd[@]}" || true
+
+      - name: Remove codex-label trigger
+        if: ${{ always() && github.event.action == 'labeled' && github.event.label.name == 'codex-label' }}
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --remove-label codex-label || true
+          echo "Attempted to remove label: codex-label"
